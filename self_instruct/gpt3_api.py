@@ -6,12 +6,23 @@ import openai
 from datetime import datetime
 import argparse
 import time
-    
+from typing import List, Dict
+
+
+def setup_azure_openai_api():
+    """This is a hack to make the OpenAI API work with Azure Functions."""
+    openai.api_type = "azure"
+    openai.api_base = os.environ["OPENAI_API_BASE"]
+    openai.api_key = os.environ["OPENAI_API_KEY"]
+    openai.api_version = "2023-05-15"
+
 
 def make_requests(
-        engine, prompts, max_tokens, temperature, top_p, 
-        frequency_penalty, presence_penalty, stop_sequences, logprobs, n, best_of, retries=3, api_key=None, organization=None
+        engine, prompts, max_tokens, temperature, top_p,
+        frequency_penalty, presence_penalty, stop_sequences, logprobs, n, best_of, retries=3, api_key=None, organization=None, is_azure=False,
     ):
+    if is_azure:
+        setup_azure_openai_api()
     response = None
     target_length = max_tokens
     if api_key is not None:
@@ -46,7 +57,7 @@ def make_requests(
                 time.sleep(backoff_time)
                 backoff_time *= 1.5
             retry_cnt += 1
-    
+
     if isinstance(prompts, list):
         results = []
         for j, prompt in enumerate(prompts):
@@ -64,6 +75,82 @@ def make_requests(
             "created_at": str(datetime.now()),
         }
         return [data]
+
+
+def make_requests_with_chatcompletion(
+        engine, prompts, max_tokens, temperature, top_p,
+        frequency_penalty, presence_penalty, stop_sequences, n, retries=3, api_key=None, organization=None, is_azure=False,
+    ):
+    """Run the chat completion API.
+
+    Difference from make_requests:
+    - `logprobs` is not supported
+    - `best_of` is not supported
+    """
+    def make_massage(prompts: List[str]) -> List[List[Dict[str, str]]]:
+        """Convert a list of prompts to a list of massages.
+
+        Returns:
+            list[list[dict[str, str]]]:
+                A list of massage. Each massage is a list of dict with keys "role" and "content".
+        """
+        system_message = "You are a helpful assistant."
+        messages = []
+        for prompt in prompts:
+            messages.append([
+                {"role": "system", "content": system_message},
+                {"role": "user", "content": prompt},
+            ])
+        return messages
+
+    if is_azure:
+        setup_azure_openai_api()
+    response = None
+    target_length = max_tokens
+    if api_key is not None:
+        openai.api_key = api_key
+    if organization is not None:
+        openai.organization = organization
+    retry_cnt = 0
+    backoff_time = 30
+    if isinstance(prompts, str):
+        prompts = [prompts]
+    messages = make_massage(prompts)
+    results = []
+    for message in messages:
+        while retry_cnt <= retries:
+            try:
+                response = openai.ChatCompletion.create(
+                    engine=engine,
+                    messages=message,
+                    max_tokens=target_length,
+                    temperature=temperature,
+                    top_p=top_p,
+                    frequency_penalty=frequency_penalty,
+                    presence_penalty=presence_penalty,
+                    stop=stop_sequences,
+                    n=n,
+                )
+                break
+            except openai.error.OpenAIError as e:
+                print(f"OpenAIError: {e}.")
+                if "Please reduce your prompt" in str(e):
+                    target_length = int(target_length * 0.8)
+                    print(f"Reducing target length to {target_length}, retrying...")
+                else:
+                    print(f"Retrying in {backoff_time} seconds...")
+                    time.sleep(backoff_time)
+                    backoff_time *= 1.5
+                retry_cnt += 1
+
+        data = {
+            "prompt": message[1]["content"],
+            "response": response,
+            "created_at": str(datetime.now()),
+        }
+        results.append(data)
+
+    return results
 
 
 def parse_args():
@@ -148,7 +235,7 @@ def parse_args():
     )
     return parser.parse_args()
 
-    
+
 if __name__ == "__main__":
     random.seed(123)
     args = parse_args()
