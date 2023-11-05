@@ -11,6 +11,7 @@ from multiprocessing import Pool
 from functools import partial
 from rouge_score import rouge_scorer
 from gpt3_api import make_requests as make_gpt3_requests
+from gpt3_api import make_requests_with_chatcompletion as make_gpt3_requests_v2
 
 
 random.seed(42)
@@ -41,7 +42,7 @@ def find_word_in_string(w, s):
 def post_process_gpt3_response(response):
     if response is None or response["choices"][0]["finish_reason"] == "length":
         return []
-    raw_instructions = re.split(r"\n\d+\s?\. ", response["choices"][0]["text"])
+    raw_instructions = re.split(r"\n\d+\s?\. ", response["choices"][0]["message"]["content"])
     instructions = []
     for inst in raw_instructions:
         inst = re.sub(r"\s+", " ", inst).strip()
@@ -170,7 +171,7 @@ if __name__ == "__main__":
                 random.shuffle(prompt_instructions)
                 prompt = encode_prompt(prompt_instructions, classification=args.use_clf_seed_tasks_only)
                 batch_inputs.append(prompt)
-            results = make_gpt3_requests(
+            results = make_gpt3_requests_v2(
                 engine=args.engine,
                 prompts=batch_inputs,
                 max_tokens=1024,
@@ -179,9 +180,7 @@ if __name__ == "__main__":
                 frequency_penalty=0,
                 presence_penalty=2,
                 stop_sequences=["\n\n", "\n16", "16.", "16 ."],
-                logprobs=1,
                 n=1,
-                best_of=1,
                 api_key=args.api_key,
                 organization=args.organization,
             )

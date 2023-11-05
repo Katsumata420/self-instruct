@@ -7,6 +7,7 @@ import argparse
 import pandas as pd
 from collections import OrderedDict
 from gpt3_api import make_requests as make_gpt3_requests
+from gpt3_api import make_requests_with_chatcompletion as make_gpt3_requests_v2
 from templates.instance_gen_template import output_first_template_for_clf, input_first_template_for_gen
 
 
@@ -138,7 +139,7 @@ if __name__ == '__main__':
                     else:
                         prompt = input_first_template_for_gen + " " + task["instruction"].strip() + "\n"
                         prompts.append(prompt)
-                results = make_gpt3_requests(
+                results = make_gpt3_requests_v2(
                     engine=args.engine,
                     prompts=prompts,
                     # because the clf template is longer, we need to decrease the max_tokens
@@ -148,16 +149,14 @@ if __name__ == '__main__':
                     frequency_penalty=0,
                     presence_penalty=1.5,
                     stop_sequences=[f"Example {args.max_instances_to_generate + 1}", "Task:"],
-                    logprobs=1,
                     n=1,
-                    best_of=1,
                     api_key=args.api_key,
                     organization=args.organization)
                 for i in range(len(batch)):
                     data = batch[i]
                     data["instance_metadata"] = results[i]
                     if results[i]["response"] is not None:
-                        data["raw_instances"] = results[i]["response"]["choices"][0]["text"]
+                        data["raw_instances"] = results[i]["response"]["choices"][0]["message"]["content"]
                     else:
                         data["raw_instances"] = ""
                     data = OrderedDict(

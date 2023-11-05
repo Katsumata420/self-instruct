@@ -7,6 +7,7 @@ import argparse
 import pandas as pd
 from collections import OrderedDict
 from gpt3_api import make_requests as make_gpt3_requests
+from gpt3_api import make_requests_with_chatcompletion as make_gpt3_requests_v2
 from templates.clf_task_template import template_1
 
 
@@ -98,7 +99,7 @@ if __name__ == '__main__':
                 # prefix = compose_prompt_prefix(human_written_tasks, batch[0]["instruction"], 8, 2)
                 prefix = templates[args.template]
                 prompts = [prefix + " " + d["instruction"].strip() + "\n" + "Is it classification?" for d in batch]
-                results = make_gpt3_requests(
+                results = make_gpt3_requests_v2(
                     engine=args.engine,
                     prompts=prompts,
                     max_tokens=3,
@@ -107,15 +108,13 @@ if __name__ == '__main__':
                     frequency_penalty=0,
                     presence_penalty=0,
                     stop_sequences=["\n", "Task"],
-                    logprobs=1,
                     n=1,
-                    best_of=1,
                     api_key=args.api_key,
                     organization=args.organization)
                 for i in range(len(batch)):
                     data = batch[i]
                     if results[i]["response"] is not None:
-                        data["is_classification"] = results[i]["response"]["choices"][0]["text"]
+                        data["is_classification"] = results[i]["response"]["choices"][0]["message"]["content"]
                     else:
                         data["is_classification"] = ""
                     data = {
